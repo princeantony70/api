@@ -107,7 +107,7 @@ func (u userAddHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var k Questions
-	if err := json.Decode &k); err != nil {
+	if err := dec.Decode(&k); err != nil {
 		fmt.Println("unmarshall error ", err)
 	}
 	
