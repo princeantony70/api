@@ -11,9 +11,6 @@ import (
 	"os"
 )
 
-var db *sql.DB
-var err error
-var arr int
 
 type Tag struct {
 	ID int `json:"id"`
@@ -69,27 +66,36 @@ type userGetHandler struct {
 
 func (u userAddHandler) insertInDatabase(data Questions) error {
 
-	_, err = u.db.Exec("INSERT INTO profile_questions(name, section, position,title,titleSpanish,submited_value,spanish_submited_value,des,ans,view_type,parent_id,isRequired,is_submit_field,is_active) VALUES(?, ?, ?,?,?,?,?,?,?,?,?,?,?,?)", data.Question.Name, data.Question.Section, data.Question.Position, data.Question.Title, data.Question.TitleSpanish, data.Question.SubmitedValue, data.Question.SpanishSubmitedValue, data.Question.Des, data.Question.Ans, data.Question.ViewType, data.Question.ParentID, data.Question.IsRequired, data.Question.IsSubmitField, data.Question.IsActive)
-
-	if len(data.Options) > 0 {
-		results, err := u.db.Query("SELECT LAST_INSERT_ID()")
+	results, err := u.db.Exec("INSERT INTO profile_questions(name, section, position,title,titleSpanish,submited_value,spanish_submited_value,des,ans,view_type,parent_id,isRequired,is_submit_field,is_active) VALUES(?, ?, ?,?,?,?,?,?,?,?,?,?,?,?)", data.Question.Name, data.Question.Section, data.Question.Position, data.Question.Title, data.Question.TitleSpanish, data.Question.SubmitedValue, data.Question.SpanishSubmitedValue, data.Question.Des, data.Question.Ans, data.Question.ViewType, data.Question.ParentID, data.Question.IsRequired, data.Question.IsSubmitField, data.Question.IsActive)
+	if err != nil {
+		return err
+	}
+	lastInsertId , err := results.LastInsertId()
+	if err != nil {
+		return err	
+	}
+	for option := range data.Options {
+		_, err = u.db.Exec("INSERT INTO profile_questions(name, section, position,title,titleSpanish,submited_value,spanish_submited_value,des,ans,view_type,parent_id,isRequired,is_submit_field,is_active) VALUES(?, ?, ?,?,?,?,?,?,?,?,?,?,?,?)", 
+				   option.Name, 
+				   option.Section, 
+				   option.Position,
+				   option.Title, 
+				   option.TitleSpanish, 
+				   option.SubmitedValue, 
+				   option.SpanishSubmitedValue, 
+				   option.Des, 
+				   option.Ans, 
+				   option.ViewType, 
+				   lastInsertId,
+				   option.IsRequired, 
+				   option.IsSubmitField, 
+				   option.IsActive)
 		if err != nil {
-			// panic(err.Error())
-			fmt.Println("err")
+			return err
 		}
-		for results.Next() {
-			var tag Tag
-			err = results.Scan(&tag.ID)
-			if err != nil {
-				// panic(err.Error())
-				fmt.Println("er")
-			}
-			arr = tag.ID
-		}
-		for i := 0; i <= 1; i++ {
-			_, err = u.db.Exec("INSERT INTO profile_questions(name, section, position,title,titleSpanish,submited_value,spanish_submited_value,des,ans,view_type,parent_id,isRequired,is_submit_field,is_active) VALUES(?, ?, ?,?,?,?,?,?,?,?,?,?,?,?)", data.Options[i].Name, data.Options[i].Section, data.Options[i].Position, data.Options[i].Title, data.Options[i].TitleSpanish, data.Options[i].SubmitedValue, data.Options[i].SpanishSubmitedValue, data.Options[i].Des, data.Options[i].Ans, data.Options[i].ViewType, arr, data.Options[i].IsRequired, data.Options[i].IsSubmitField, data.Options[i].IsActive)
-		}
-	} else if data.Validation.Messgae != "" {
+		
+	}
+	if data.Validation.Messgae != "" {
 		_, err = u.db.Exec("INSERT INTO input_types(messgae,messageSpanish,regx,format) VALUES(?,?,?,?)", data.Validation.Messgae, data.Validation.MessageSpanish, data.Validation.Regx, data.Validation.Format)
 	}
 
@@ -97,19 +103,20 @@ func (u userAddHandler) insertInDatabase(data Questions) error {
 }
 
 func (u userAddHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		fmt.Println("reading the Request error")
-	}
+	dec := json.NewDecoder(r.Body)
+	defer r.Body.Close()
 
 	var k Questions
-
-	if err = json.Unmarshal(body, &k); err != nil {
-		fmt.Println("unmarshall error ")
+	if err := json.Decode &k); err != nil {
+		fmt.Println("unmarshall error ", err)
 	}
-
-	err = u.insertInDatabase(k)
-	w.Write([]byte(`{"code ":"success"}`))
+	
+	if err := u.insertInDatabase(k); err != nil {
+		fmt.Fprintln(w, err.Error())
+		return
+	}
+	// no need for extra casting
+	fmt.Fprintln(w, `{"code ":"success"}`)
 }
 
 func (v userGetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -131,14 +138,15 @@ func (v userGetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = rows.Scan(&validation.Regx, &validation.Format)
 
 		if err != nil {
-			panic(err)
+			fmt.Println("failed to scan validation data", err)
+			 
 		}
 		json.NewEncoder(os.Stdout).Encode(validation)
 
 		enc.Encode(validation)
 
 	}
-	err = rows.Err()
+	
 	if err != nil {
 		panic(err)
 	}
@@ -146,12 +154,16 @@ func (v userGetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	var err error
-	db, err = sql.Open("mysql", "root:nfn@tcp(127.0.0.1:3306)/api")
+	
+	db, err := sql.Open("mysql", "root:nfn@tcp(127.0.0.1:3306)/api")
 	if err != nil {
 		log.Fatalf("failed to open db: %s", err)
 	}
-
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+		//Ping is needed to test the conection - Open only tests the connection string
+	}
 	defer db.Close()
 
 	handler := userAddHandler{
